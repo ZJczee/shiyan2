@@ -1,0 +1,20 @@
+body{
+    background-color: rgb(238, 237, 236);
+    text-align: center;
+}
+p{
+    color:rgb(148, 42, 81);
+    text-align: center;
+}
+h1{
+    color:rgb(37, 48, 68);
+    text-align: center;
+}
+h3{
+    color: rgb(17, 14, 15);
+    text-align: center;
+}
+pre{
+    color:rgb(10, 10, 12);
+    text-align: center;
+}

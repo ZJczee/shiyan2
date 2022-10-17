@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管道-过滤</title>
+    <link rel="stylesheet" href="colorsetting.css" >
+</head>
+<body>
+    <h1>管道-过滤软件体系结构</h1>
+    <h3>原理图：</h3>
+    <p>
+        <img src="https://img-blog.csdnimg.cn/20210619165005895.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L20wXzQ4OTE3NTUz,size_16,color_FFFFFF,t_70" alt="">
+    </p>
+    <br><br><br>
+    <h3>文字说明：</h3>
+    <p>
+        构件：过滤器。它对输入流进行处理、转换。处理后的结果在输出端流出。
+【过滤器之间是相互独立的，无需进行状态信息的交互（主要特点）。每个过滤器都有输入输出，过程是：输入流->进行处理->输出流】
+连接件：管道。位于过滤器之间，起到信息流的导管作用
+ </P>
+<p>
+    
+    当处理数据流时，每一处理步骤都由一个过滤器（构件）完成，这些过滤器由携带数据的管道（连接件）连接起来
+    过滤器：从输入源读入一个数据流，并从输出池写出另一个数据流
+    管道：把一个过滤器的输出传送到另一个过滤器作为输入
+    用不同的组合方式连接过滤器可以提供处理数据流的不同方式
+
+
+</p>
+<p>
+    可以解决的问题：
+
+    处理数据流，自然的分为几个步骤（可理解为需要做一系列独立的增量计算/转换）
+    可能需要重组步骤
+    不连续的步骤不共享信息/状态
+</p>
+    <br><br><br>
+    <h3>源程序代码结构</h3>
+    <h5>Pipe类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Pipe {
+            private Scanner pipeReader;
+            private PrintWriter pipeWriter;
+            Pipe(){
+                PipedWriter pipedWriter = new PipedWriter();
+                PipedReader pipedReader = new PipedReader();
+                try {
+                    pipedWriter.connect(pipedReader);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                pipeReader = new Scanner(pipedReader);
+                pipeWriter = new PrintWriter(pipedWriter);
+            }
+            public String readerLine(){
+                return pipeReader.nextLine();
+            }
+            public boolean hashNextLine(){
+                return pipeReader.hasNext();
+            }
+            public void writerLine(String strLine){
+                pipeWriter.println(strLine);
+            }
+            public void closeReader(){
+                pipeReader.close();
+            }
+            public void closeWriter(){
+                pipeWriter.close();
+            }
+        }
+        
+        
+    </pre>
+    <h5>Filter类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public abstract class Filter {
+            protected Pipe input;
+            protected Pipe output;
+        
+            public Filter(Pipe input, Pipe output) {
+                this.input = input;
+                this.output = output;
+            }
+            protected abstract void transform() throws IOException;
+        }
+        
+    </pre>
+    <h5>Input类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Input extends Filter {
+            private File file;
+            public Input(File file,Pipe output) {
+                super(null, output);
+                this.file = file;
+            }
+        
+            @Override
+            protected void transform() throws IOException {
+                BufferedReader inputFile = null;
+                try {
+                    inputFile = new BufferedReader(new FileReader(file));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                String line;
+                try {
+                    while ((line = inputFile.readLine()) != null) {
+                        output.writerLine(line);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                output.closeWriter();
+            }
+        }
+        
+        
+    </pre>
+    <h5>Shift类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Shift extends Filter {
+        
+            public Shift(Pipe input, Pipe output) {
+                super(input, output);
+            }
+        
+            @Override
+            protected void transform() throws IOException {
+                //获取每个单词，存入tokens
+                while (input.hashNextLine()) {
+                    StringTokenizer token = new StringTokenizer(input.readerLine());
+                    ArrayList<String> tokens = new ArrayList<String>();
+                    int i = 0;
+                    //循环添加单词
+                    int count = token.countTokens();
+                    while (i < count) {
+                        tokens.add(token.nextToken());
+                        i++;
+                    }
+        
+                    //display(tokens);
+                    //切割各个单词，不断改变起始值和利用loop实现位移。
+                    for (i = 0; i < count; i++) {
+                        StringBuffer lineBuffer = new StringBuffer();
+                        int index = i;
+                        for (int f = 0; f < count; f++) {
+                            //从头继续位移
+                            if (index >= count)
+                                index = 0;
+                            //存入StringBuffer
+                            lineBuffer.append(tokens.get(index));
+                            lineBuffer.append(" ");
+                            index++;
+                        }
+                        String tmp = lineBuffer.toString();
+                        output.writerLine(tmp);
+                    }
+                }
+                input.closeReader();
+                output.closeWriter();
+            }
+        }
+        
+    </pre>
+    <h5>Alphabetizer类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Alphabetizer extends Filter {
+            private ArrayList<String> kwicList = new ArrayList<>();
+            public Alphabetizer(Pipe input, Pipe output) {
+                super(input, output);
+            }
+        
+            @Override
+            protected void transform() throws IOException {
+                while (input.hashNextLine()){
+                    kwicList.add(input.readerLine());
+                }
+                Collections.sort(this.kwicList, new AlphabetizerComparator());
+                for (String line:kwicList){
+                    output.writerLine(line);
+                }
+                input.closeReader();
+                output.closeWriter();
+            }
+            private class AlphabetizerComparator implements Comparator<String> {
+                @Override
+                public int compare(String o1, String o2) {
+                    if (o1 == null && o2 == null) {
+                        throw new NullPointerException();
+                    }
+                    int compareValue = 0;
+                    char o1c = o1.toLowerCase().charAt(0); //忽略大小写
+                    char o2c = o2.toLowerCase().charAt(0); //忽略大小写
+                    compareValue = o1c - o2c;
+                    return compareValue;
+        
+                }
+        
+            }
+        }
+        
+        
+    </pre>
+    <h5>Output类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Output extends Filter {
+            private File file;
+            public Output(File file,Pipe input) {
+                super(input, null);
+                this.file = file;
+            }
+        
+            @Override
+            protected void transform() throws IOException {
+                BufferedWriter outputFile =null;
+                String line;
+                try {
+                    outputFile = new BufferedWriter(new FileWriter(file));
+                    while (input.hashNextLine()) {
+                        outputFile.write(input.readerLine()+"\n");
+                    }
+                }catch (IOException e){
+                    e.printStackTrace();
+                }finally {
+                    try {
+                        if (outputFile!=null) {
+                            outputFile.close();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+                input.closeReader();
+            }
+        }
+        
+        
+    </pre>
+    <h5>Main类</h5>
+    <pre>
+        package S3;
+
+        import java.io.*;
+        import java.util.*;
+        
+        public class Main {
+            public static void main(String[] args) throws IOException {
+                File inFile = new File("G:\\实训\\新建文件夹\\input.txt");
+                File outFile = new File("G:\\实训\\新建文件夹\\output.txt");
+                Pipe pipe1 = new Pipe();
+                Pipe pipe2 = new Pipe();
+                Pipe pipe3 = new Pipe();
+                Input input = new Input(inFile, pipe1);
+                Shift shift = new Shift(pipe1, pipe2);
+                Alphabetizer alphabetizer  = new Alphabetizer(pipe2, pipe3);
+                Output output = new Output(outFile,pipe3);
+                input.transform();
+                shift.transform();
+                alphabetizer.transform();
+                output.transform();
+        
+            }
+        }
+        
+                
+    </pre>
+</body>
+</html>
